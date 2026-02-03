@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import AudioContextManager from '@/lib/audio-context';
+import { useMediaSession } from './useMediaSession';
 
 /**
  * useBinaural Hook
@@ -183,6 +184,36 @@ export const useBinaural = () => {
       engine.current.context = null;
     };
   }, []);
+  // Use Media Session
+  useMediaSession({
+    title: 'Binaural Session',
+    artist: 'Binaural Lab',
+    album: 'Frequency Synthesis',
+    artwork: [
+        { src: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' }
+    ],
+    isPlaying,
+    onPlay: () => play(),
+    onPause: () => stop(),
+  });
+
+  // Handle visibility change (AudioContext Resilience)
+  useEffect(() => {
+      const handleVisibilityChange = () => {
+          if (document.hidden) return; // Background handling is done via SilentAudio
+
+          // When coming to foreground, ensure context is running if we are supposed to be playing
+          if (isPlaying && engine.current.context?.state === 'suspended') {
+              engine.current.context.resume();
+          }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+  }, [isPlaying]);
 
   return {
     play,

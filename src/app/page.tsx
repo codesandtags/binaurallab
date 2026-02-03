@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Play, Square, Volume2, Waves, Info } from 'lucide-react';
 import { Slider } from '@/components/ui/Slider';
+import { SilentAudioPlayer } from '@/components/audio/SilentAudioPlayer';
 
 export default function Home() {
   const {
@@ -51,6 +52,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-background p-4 md:p-8 flex flex-col items-center font-sans selection:bg-primary/30">
+      <SilentAudioPlayer isPlaying={isPlaying} />
       <div className="max-w-4xl w-full space-y-8 pb-20">
 
         {/* Header */}

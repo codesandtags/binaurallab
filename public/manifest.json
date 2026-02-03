@@ -4,6 +4,7 @@
   "description": "High-performance Binaural Beat Generator",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#030711",
   "theme_color": "#030711",
   "icons": [
