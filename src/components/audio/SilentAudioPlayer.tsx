@@ -13,18 +13,41 @@ interface SilentAudioPlayerProps {
     isPlaying: boolean;
 }
 
+import AudioContextManager from '@/lib/audio-context';
+
 export const SilentAudioPlayer: React.FC<SilentAudioPlayerProps> = ({ isPlaying }) => {
     const audioRef = useRef<HTMLAudioElement>(null);
+    const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
 
     useEffect(() => {
         const audio = audioRef.current;
-        if (!audio) return;
+        const ctx = AudioContextManager.getInstance();
+
+        if (!audio || !ctx) return;
+
+        // Connect HTML5 Audio Element to Web Audio Context
+        // This "tricks" iOS into thinking the Web Audio is driven by a native media element
+        if (!sourceRef.current) {
+            try {
+                // Check if source already exists for this element (can throw if re-connecting)
+                 if (!audio.dataset.connected) {
+                    sourceRef.current = ctx.createMediaElementSource(audio);
+                    sourceRef.current.connect(ctx.destination);
+                    audio.dataset.connected = "true";
+                 }
+            } catch (e) {
+                // Ignore if already connected
+            }
+        }
 
         if (isPlaying) {
-            audio.play().catch(() => {
-                // Auto-play policies might block this if not triggered by user interaction.
-                // However, since isPlaying is usually set via a button click, this often works.
-                console.warn("Silent audio blocked");
+             // Ensure context is running for iOS
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
+
+            audio.play().catch((err) => {
+                console.warn("Silent audio blocked:", err);
             });
         } else {
             audio.pause();
@@ -38,8 +61,15 @@ export const SilentAudioPlayer: React.FC<SilentAudioPlayerProps> = ({ isPlaying 
             src={SILENT_MP3}
             loop
             playsInline
-            muted={false} // Must not be muted to effectively keep session alive on some OS
-            style={{ display: 'none' }}
+            muted={false}
+            // Do not use display:none, some browsers ignore it. Use opacity 0.
+            style={{
+                position: 'fixed',
+                pointerEvents: 'none',
+                opacity: 0,
+                height: '1px',
+                width: '1px'
+            }}
         />
     );
 };
