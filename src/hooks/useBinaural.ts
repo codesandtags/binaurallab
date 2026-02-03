@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
+import AudioContextManager from '@/lib/audio-context';
 
 /**
  * useBinaural Hook
@@ -31,9 +32,9 @@ export const useBinaural = () => {
 
   // Initialize Audio Context on user interaction (handled via play)
   const initAudio = useCallback(() => {
-    if (!engine.current.context) {
-      const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-      engine.current.context = new AudioContextClass();
+    const ctx = AudioContextManager.getInstance();
+    if (ctx && !engine.current.context) {
+        engine.current.context = ctx;
     }
     return engine.current.context;
   }, []);
@@ -177,9 +178,9 @@ export const useBinaural = () => {
   // Handle cleanup on unmount
   useEffect(() => {
     return () => {
-      if (engine.current.context) {
-        engine.current.context.close();
-      }
+      // Do not close the shared context, just clear the ref
+      // AudioContextManager potentially manages closer or app lifecycle
+      engine.current.context = null;
     };
   }, []);
 

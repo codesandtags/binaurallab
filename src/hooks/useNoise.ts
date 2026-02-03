@@ -1,18 +1,29 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
+import AudioContextManager from '@/lib/audio-context';
 
 type NoiseType = 'pink' | 'white' | 'brown';
 
 interface NoiseEngineRef {
     context: AudioContext | null;
     source: AudioBufferSourceNode | null;
-    gain: GainNode | null;
+    limitGain: GainNode | null; // For overall leveling
+    variableGain: GainNode | null; // For LFO volume modulation (breath)
+    filter: BiquadFilterNode | null;
+    lfoGain: OscillatorNode | null; // LFO for gain modulation
+    lfoFilter: OscillatorNode | null; // LFO for filter modulation
+    lfoFilterGain: GainNode | null; // Depth of filter modulation
 }
 
 export const useNoise = () => {
     const engine = useRef<NoiseEngineRef>({
         context: null,
         source: null,
-        gain: null,
+        limitGain: null,
+        variableGain: null,
+        filter: null,
+        lfoGain: null,
+        lfoFilter: null,
+        lfoFilterGain: null,
     });
 
     const [isPlaying, setIsPlaying] = useState(false);
@@ -20,56 +31,41 @@ export const useNoise = () => {
     const [type, setTypeState] = useState<NoiseType>('pink');
 
     const initAudio = useCallback(() => {
-        if (!engine.current.context) {
-             const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-             engine.current.context = new AudioContextClass();
+        const ctx = AudioContextManager.getInstance();
+        if (ctx && !engine.current.context) {
+             engine.current.context = ctx;
         }
         return engine.current.context;
     }, []);
 
-    const createNoiseBuffer = (ctx: AudioContext, type: NoiseType): AudioBuffer => {
-        const bufferSize = ctx.sampleRate * 2; // 2 seconds buffer
+    // Create a 10-second white noise buffer (base source)
+    const createNoiseBuffer = (ctx: AudioContext): AudioBuffer => {
+        const bufferSize = ctx.sampleRate * 10; // 10 seconds for less repetition
         const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const output = buffer.getChannelData(0);
 
-        if (type === 'white') {
-            for (let i = 0; i < bufferSize; i++) {
-                output[i] = Math.random() * 2 - 1;
-            }
-        } else if (type === 'pink') {
-            let b0, b1, b2, b3, b4, b5, b6;
-            b0 = b1 = b2 = b3 = b4 = b5 = b6 = 0.0;
-            for (let i = 0; i < bufferSize; i++) {
-                const white = Math.random() * 2 - 1;
-                b0 = 0.99886 * b0 + white * 0.0555179;
-                b1 = 0.99332 * b1 + white * 0.0750759;
-                b2 = 0.96900 * b2 + white * 0.1538520;
-                b3 = 0.86650 * b3 + white * 0.3104856;
-                b4 = 0.55000 * b4 + white * 0.5329522;
-                b5 = -0.7616 * b5 - white * 0.0168980;
-                output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-                output[i] *= 0.11; // (roughly) compensate for gain
-                b6 = white * 0.115926;
-            }
-        } else if (type === 'brown') {
-            let lastOut = 0;
-            for (let i = 0; i < bufferSize; i++) {
-                const white = Math.random() * 2 - 1;
-                output[i] = (lastOut + (0.02 * white)) / 1.02;
-                lastOut = output[i];
-                output[i] *= 3.5; // (roughly) compensate for gain
-            }
+        for (let i = 0; i < bufferSize; i++) {
+            output[i] = Math.random() * 2 - 1;
         }
         return buffer;
     };
 
     const stop = useCallback(() => {
-        const { source, context, gain } = engine.current;
-        if (source && context && gain) {
-            gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.5);
-            source.stop(context.currentTime + 0.5);
-            source.disconnect();
-            engine.current.source = null;
+        const { source, context, limitGain, lfoGain, lfoFilter } = engine.current;
+        if (source && context && limitGain) {
+            const stopTime = context.currentTime + 0.5;
+            limitGain.gain.exponentialRampToValueAtTime(0.001, stopTime);
+            source.stop(stopTime);
+            lfoGain?.stop(stopTime);
+            lfoFilter?.stop(stopTime);
+
+            setTimeout(() => {
+                source.disconnect();
+                lfoGain?.disconnect();
+                lfoFilter?.disconnect();
+                engine.current.source = null;
+                // Don't nullify context
+            }, 600);
         }
         setIsPlaying(false);
     }, []);
@@ -78,30 +74,94 @@ export const useNoise = () => {
         const ctx = initAudio();
         if (!ctx) return;
 
-        // Resume if suspended
         if (ctx.state === 'suspended') ctx.resume();
 
-        // Stop existing if needed (switching types)
+        // Cleanup existing (re-play logic)
         if (engine.current.source) {
             engine.current.source.stop();
             engine.current.source.disconnect();
         }
 
-        const buffer = createNoiseBuffer(ctx, type);
+        // 1. Source: White Noise Loop
+        const buffer = createNoiseBuffer(ctx);
         const source = ctx.createBufferSource();
         source.buffer = buffer;
         source.loop = true;
 
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 1);
+        // 2. Filter Setup
+        const filter = ctx.createBiquadFilter();
+        // Default based on type - will be refined
+        if (type === 'brown') {
+            filter.type = 'lowpass';
+            filter.frequency.value = 180;
+            filter.Q.value = 1;
+        } else if (type === 'pink') {
+            // "Pink-ish" approximation using Lowpass + specific gain or Highshelf cut
+            // True pink noise is -3dB/octave. Biquads are -12dB/oct.
+            // A common trick is multiple filters or just a gentle Lowpass for aesthetics.
+            // Let's use a broader Lowpass at higher freq + Lowshelf boost
+            filter.type = 'lowpass';
+            filter.frequency.value = 800;
+            filter.Q.value = 0.5;
+        } else {
+             // White - almost no filtering, maybe slight rolloff
+             filter.type = 'lowpass';
+             filter.frequency.value = 18000;
+        }
 
-        source.connect(gain);
-        gain.connect(ctx.destination);
+        // 3. Gain Nodes for Volume Control & Modulation
+        const variableGain = ctx.createGain(); // modulated by LFO
+        variableGain.gain.value = 0.8;
+
+        const limitGain = ctx.createGain(); // Master volume for this track
+        limitGain.gain.setValueAtTime(0, ctx.currentTime);
+        limitGain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 1);
+
+        // 4. LFO 1: "breath" (Volume Modulation)
+        // Very slow sine wave (0.1Hz ~ 10s cycle) to create ocean-like swell
+        const lfoGain = ctx.createOscillator();
+        lfoGain.type = 'sine';
+        lfoGain.frequency.value = 0.1;
+        const lfoGainDepth = ctx.createGain();
+        lfoGainDepth.gain.value = 0.15; // Modulate volume by +/- 0.15
+
+        lfoGain.connect(lfoGainDepth);
+        lfoGainDepth.connect(variableGain.gain);
+
+        // 5. LFO 2: "spectral movement" (Filter Frequency Modulation)
+        // Slower 0.05Hz
+        const lfoFilter = ctx.createOscillator();
+        lfoFilter.type = 'triangle';
+        lfoFilter.frequency.value = 0.05;
+        const lfoFilterDepth = ctx.createGain();
+        lfoFilterDepth.gain.value = type === 'white' ? 500 : 100; // Modulate Freq by +/- Hz
+
+        lfoFilter.connect(lfoFilterDepth);
+        lfoFilterDepth.connect(filter.frequency);
+
+        // Graph Connection
+        // Source -> Filter -> VariableGain (LFO'd) -> LimitGain (User Vol) -> Destination
+        source.connect(filter);
+        filter.connect(variableGain);
+        variableGain.connect(limitGain);
+        limitGain.connect(ctx.destination);
+
+        // Start Oscillators
         source.start();
+        lfoGain.start();
+        lfoFilter.start();
 
-        engine.current.source = source;
-        engine.current.gain = gain;
+        // Store Refs
+        engine.current = {
+            ...engine.current,
+            source,
+            filter,
+            variableGain,
+            limitGain,
+            lfoGain,
+            lfoFilter,
+            lfoFilterDepth: lfoFilterDepth // Need to store if we want to tweak later, but ref implies direct node
+        } as any; // Cast for custom props not in initial interface if needed, or update interface
 
         setIsPlaying(true);
     }, [initAudio, type, volume]);
@@ -109,36 +169,34 @@ export const useNoise = () => {
     // Handle Volume Change
     const setVolume = useCallback((val: number) => {
         setVolumeState(val);
-        const { context, gain } = engine.current;
-        if (context && gain) {
-             gain.gain.setTargetAtTime(val, context.currentTime, 0.1);
+        const { context, limitGain } = engine.current;
+        if (context && limitGain) {
+             limitGain.gain.setTargetAtTime(val, context.currentTime, 0.1);
         }
     }, []);
 
     // Handle Type Change
     const setType = useCallback((newType: NoiseType) => {
         setTypeState(newType);
-        // If playing, restart with new type
-        if (engine.current.source && engine.current.context?.state === 'running') {
-             // We need to trigger a restart, but we can't easily call play() here inside useCallback without dep cycle or strict mode issues
-             // Simplest way: let the user restart or handle it via useEffect?
-             // Let's rely on a separate effect to restart if playing and type changes?
-        }
     }, []);
 
     // Effect to handle type switching while playing
     useEffect(() => {
         if (isPlaying) {
-            play(); // Re-trigger play to swap buffer
+            play(); // Re-trigger play to rebuild graph with new filter settings
         }
-    }, [type]); // Warning: This might cause loop if play changes isPlaying.
-                // play() sets isPlaying(true) which is same.
-                // But play() creates NEW source.
+    }, [type]);
 
     // Cleanup
     useEffect(() => {
         return () => {
-             if (engine.current.context) engine.current.context.close();
+            // shared context, don't close. Just stop.
+             if (engine.current.source) {
+                 try {
+                     engine.current.source.stop();
+                 } catch (e) {}
+             }
+             engine.current.context = null;
         };
     }, []);
 
