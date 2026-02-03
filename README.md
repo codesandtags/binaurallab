@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Binaural Lab 🎧
+
+**Binaural Lab** is a high-performance Progressive Web App (PWA) designed for productivity, meditation, and sleep. It primarily functions as a **Binaural Beat Generator**, synthesizing pure sine waves in real-time using the Web Audio API to create precise psychoacoustic effects without relying on static audio files.
+
+## features
+
+### 🔊 **Pure Audio Engine**
+- **Real-time Synthesis**: Uses `OscillatorNodes` and `StereoPannerNodes` for mathematical precision.
+- **Dynamic Procedural Noise**: Organic Pink/Brown noise generated via 10s buffer loops, modulated by LFOs for "Breath" (Volume) and "Movement" (Filter) effects to mimic natural environments like wind or ocean.
+- **Dual-Channel Processing**: Precise frequency separation (Base vs Base + Beat) for accurate brainwave entrainment.
+
+### 🎛 **Controls & Customization**
+- **Presets**: Instant access to Alpha, Beta, Delta, Theta, and Gamma states with descriptive benefits.
+- **Manual Tuning**: Fine-grain control over Carrier Frequency (50Hz - 900Hz) and Binaural Offset (0.5Hz - 50Hz).
+- **Acoustic Environment**: Mix ambient noise with binaural beats for masking and comfort.
+- **Sleep Timer**: Built-in countdown with smart audio fade-out.
+
+### 📊 **Data & Analytics**
+- **Session Logging**: Automatically tracks your focus sessions in IndexedDB (local, private storage).
+- **Weekly Stats**: Visualizes your daily usage over the last 7 days.
+
+### 📱 **PWA & Performance**
+- **Offline First**: Fully functional without internet connection.
+- **Installable**: Add to home screen on iOS and Android.
+- **Zero Latency**: Instant audio response.
+
+## Tech Stack
+- **Framework**: [Next.js 16](https://nextjs.org/) (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS v4
+- **State**: React Hooks (`useBinaural`, `useNoise`, `useSessionLogger`)
+- **Database**: Dexie.js (IndexedDB wrapper)
+- **Charts**: Recharts
 
 ## Getting Started
 
-First, run the development server:
+1. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+2. **Run the development server**:
+   ```bash
+   npm run dev
+   ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. **Build for production**:
+   ```bash
+   npm run build
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
+*Engineered for Codes and Tags*
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

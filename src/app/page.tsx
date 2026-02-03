@@ -153,7 +153,7 @@ export default function Home() {
             <Presets onSelect={handlePresetSelect} activeBeat={binauralBeat} />
         </div>
 
-        {/* Feature Grid */}
+        {/* Feature Grid: Manual & Ambient */}
         <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-6">
                  {/* Manual Tuning */}
@@ -165,7 +165,9 @@ export default function Home() {
                         onChange={setFrequency}
                      />
                 </div>
+            </div>
 
+            <div className="space-y-6">
                  {/* Ambient Control */}
                  <div className="space-y-4">
                      <h2 className="text-xl font-semibold px-2 text-foreground/90">Acoustic Environment</h2>
@@ -180,32 +182,23 @@ export default function Home() {
                      />
                  </div>
             </div>
+        </div>
 
-            <div className="space-y-6">
-                 {/* Sleep Timer */}
-                 <div className="space-y-4">
-                     <h2 className="text-xl font-semibold px-2 text-foreground/90">Sleep Timer</h2>
-                     <SleepTimer
-                        isPlaying={isPlaying}
-                        onTimerComplete={() => {
-                            stop(30);
-                            noise.stop(); // Stop noise too? Maybe keep noise? Usually stop all.
-                        }}
-                    />
-                </div>
+        {/* Sleep Timer - Full Width Below */}
+        <div className="max-w-md mx-auto w-full space-y-4">
+             <h2 className="text-xl font-semibold px-2 text-foreground/90">Sleep Timer</h2>
+             <SleepTimer
+                isPlaying={isPlaying}
+                onTimerComplete={() => {
+                    stop(30);
+                    noise.stop();
+                }}
+            />
+        </div>
 
-                {/* Analytics */}
-                {/* Analytics - HIDDEN FOR BETA */}
-                {/*
-                <div className="space-y-4">
-                     <h2 className="text-xl font-semibold px-2 text-foreground/90">Analytics</h2>
-                     <Stats />
-                     <p className="text-xs text-muted-foreground px-2 text-center pt-2">
-                         Sessions are stored locally on your device.
-                     </p>
-                </div>
-                */}
-            </div>
+        {/* Analytics (Components Hidden) */}
+        <div className="hidden">
+           {/* Analytics would go here */}
         </div>
 
         {/* Footer Branding */}
