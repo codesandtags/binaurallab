@@ -66,7 +66,7 @@ export const LandingPage = () => {
                     
                     <h1 className="text-5xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.9] text-white">
                         Master Your State of Mind.<br />
-                        <span className="bg-gradient-to-r from-primary via-purple-400 to-indigo-400 bg-clip-text text-transparent">
+                        <span className="text-3xl md:text-6xl bg-gradient-to-r from-primary via-purple-400 to-indigo-400 bg-clip-text text-transparent">
                            Engineered for {dynamicText}.
                         </span>
                     </h1>
