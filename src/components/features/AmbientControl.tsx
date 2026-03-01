@@ -2,9 +2,9 @@ import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Slider } from '@/components/ui/Slider';
 import { Button } from '@/components/ui/Button';
-import { Wind, CloudRain, Zap } from 'lucide-react';
+import { Wind, CloudRain, Zap, Waves } from 'lucide-react';
 
-type NoiseType = 'pink' | 'white' | 'brown';
+type NoiseType = 'pink' | 'white' | 'brown' | 'drone';
 
 interface AmbientControlProps {
     volume: number;
@@ -55,6 +55,14 @@ export const AmbientControl: React.FC<AmbientControlProps> = ({
                         className="flex-1"
                       >
                          <Zap className="w-4 h-4 mr-2" /> White
+                      </Button>
+                      <Button
+                        variant={type === 'drone' ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => onTypeChange('drone')}
+                        className="flex-1"
+                      >
+                         <Waves className="w-4 h-4 mr-2" /> Drone
                       </Button>
                  </div>
 

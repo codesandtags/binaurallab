@@ -12,14 +12,13 @@ export const Stats = () => {
    useEffect(() => {
        const loadStats = async () => {
            try {
-               // Load all sessions (for MVP, filtering in memory is fine unless huge data)
-               // Or queries:
+               // Load all sessions
                const allSessions = await db.sessions.toArray();
 
                const chartData = [];
                for(let i=6; i>=0; i--) {
                    const d = new Date();
-                   d.setDate(d.setDate(new Date().getDate() - i)); // fix logic
+                   d.setDate(d.getDate() - i);
                    // Create day boundaries
                    const dayStart = new Date(d);
                    dayStart.setHours(0,0,0,0);
@@ -30,7 +29,7 @@ export const Stats = () => {
                    const totalSeconds = daySessions.reduce((acc, curr) => acc + curr.duration, 0);
 
                    chartData.push({
-                       day: dayStart.toLocaleDateString('en-US', { weekday: 'short' }),
+                       day: new Date(dayStart.getTime()).toLocaleDateString('en-US', { weekday: 'short' }),
                        hours: Number((totalSeconds / 3600).toFixed(1))
                    });
                }
@@ -41,18 +40,16 @@ export const Stats = () => {
        };
 
        loadStats();
-
-       // Simple polling to keep fresh if needed, or just relying on mount
    }, []);
 
    return (
        <Card className="w-full h-[300px]">
-           <CardHeader className="pb-2">
+           <CardHeader className="p-4 pb-2 md:p-6 md:pb-2">
                <CardTitle className="text-lg flex items-center gap-2">
                    <BarChart3 className="w-5 h-5" /> Weekly Focus (Hours)
                </CardTitle>
            </CardHeader>
-           <CardContent className="h-[220px] w-full">
+           <CardContent className="h-[220px] w-full p-2 pt-0 md:p-6 md:pt-0">
                <ResponsiveContainer width="100%" height="100%">
                    <BarChart data={data}>
                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />

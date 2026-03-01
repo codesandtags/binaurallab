@@ -1,35 +1,71 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import AudioContextManager from '@/lib/audio-context';
 
-type NoiseType = 'pink' | 'white' | 'brown';
+export type NoiseType = 'pink' | 'white' | 'brown' | 'drone';
 
 interface NoiseEngineRef {
     context: AudioContext | null;
+    
+    // Noise nodes
     source: AudioBufferSourceNode | null;
-    limitGain: GainNode | null; // For overall leveling
-    variableGain: GainNode | null; // For LFO volume modulation (breath)
     filter: BiquadFilterNode | null;
-    lfoGain: OscillatorNode | null; // LFO for gain modulation
-    lfoFilter: OscillatorNode | null; // LFO for filter modulation
-    lfoFilterGain: GainNode | null; // Depth of filter modulation
-    lfoFilterDepth?: GainNode | null;
+    lfoGain: OscillatorNode | null;
+    lfoFilter: OscillatorNode | null;
+    
+    // Drone nodes
+    droneOscillators: OscillatorNode[];
+    droneLfo: OscillatorNode | null;
+    
+    // Common mix nodes
+    limitGain: GainNode | null; 
+    variableGain: GainNode | null; 
+}
+
+/**
+ * Generates a mathematical Impulse Response (IR) for lush, cavernous reverb
+ */
+function createSyntheticReverb(
+  context: AudioContext,
+  duration: number = 4,
+  decay: number = 2.5,
+) {
+  const sampleRate = context.sampleRate;
+  const length = sampleRate * duration;
+  const impulse = context.createBuffer(2, length, sampleRate);
+  const left = impulse.getChannelData(0);
+  const right = impulse.getChannelData(1);
+
+  for (let i = 0; i < length; i++) {
+    const multiplier = Math.pow(1 - i / length, decay);
+    left[i] = (Math.random() * 2 - 1) * multiplier;
+    right[i] = (Math.random() * 2 - 1) * multiplier;
+  }
+  return impulse;
 }
 
 export const useNoise = () => {
     const engine = useRef<NoiseEngineRef>({
         context: null,
         source: null,
-        limitGain: null,
-        variableGain: null,
         filter: null,
         lfoGain: null,
         lfoFilter: null,
-        lfoFilterGain: null,
+        droneOscillators: [],
+        droneLfo: null,
+        limitGain: null,
+        variableGain: null,
     });
 
     const [isPlaying, setIsPlaying] = useState(false);
-    const [volume, setVolumeState] = useState(0.5);
+    const [volume, setVolumeState] = useState(0.6);
     const [type, setTypeState] = useState<NoiseType>('pink');
+
+    // Use a ref for volume to prevent `play` from being recreated when volume sliders move,
+    // which would otherwise cause the useEffect to rapidly restart the audio.
+    const volumeRef = useRef(volume);
+    useEffect(() => {
+        volumeRef.current = volume;
+    }, [volume]);
 
     const initAudio = useCallback(() => {
         const ctx = AudioContextManager.getInstance();
@@ -41,10 +77,9 @@ export const useNoise = () => {
 
     // Create a 10-second white noise buffer (base source)
     const createNoiseBuffer = (ctx: AudioContext): AudioBuffer => {
-        const bufferSize = ctx.sampleRate * 10; // 10 seconds for less repetition
+        const bufferSize = ctx.sampleRate * 10;
         const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const output = buffer.getChannelData(0);
-
         for (let i = 0; i < bufferSize; i++) {
             output[i] = Math.random() * 2 - 1;
         }
@@ -52,20 +87,34 @@ export const useNoise = () => {
     };
 
     const stop = useCallback(() => {
-        const { source, context, limitGain, lfoGain, lfoFilter } = engine.current;
-        if (source && context && limitGain) {
+        const { source, context, limitGain, lfoGain, lfoFilter, droneOscillators, droneLfo } = engine.current;
+        if (context && limitGain) {
             const stopTime = context.currentTime + 0.5;
+            limitGain.gain.cancelScheduledValues(context.currentTime);
+            limitGain.gain.setValueAtTime(limitGain.gain.value, context.currentTime);
             limitGain.gain.exponentialRampToValueAtTime(0.001, stopTime);
-            source.stop(stopTime);
-            lfoGain?.stop(stopTime);
-            lfoFilter?.stop(stopTime);
+
+            if (source) { try { source.stop(stopTime); } catch (e) {} }
+            if (lfoGain) { try { lfoGain.stop(stopTime); } catch (e) {} }
+            if (lfoFilter) { try { lfoFilter.stop(stopTime); } catch (e) {} }
+            droneOscillators.forEach(osc => { try { osc.stop(stopTime); } catch (e) {} });
+            if (droneLfo) { try { droneLfo.stop(stopTime); } catch (e) {} }
 
             setTimeout(() => {
-                source.disconnect();
-                lfoGain?.disconnect();
-                lfoFilter?.disconnect();
+                if (source) { try { source.disconnect(); } catch (e) {} }
+                if (lfoGain) { try { lfoGain.disconnect(); } catch (e) {} }
+                if (lfoFilter) { try { lfoFilter.disconnect(); } catch (e) {} }
+                droneOscillators.forEach(osc => { try { osc.disconnect(); } catch (e) {} });
+                if (droneLfo) { try { droneLfo.disconnect(); } catch (e) {} }
+                if (limitGain) { try { limitGain.disconnect(); } catch (e) {} }
+                
+                // Clear state just to be safe
                 engine.current.source = null;
-                // Don't nullify context
+                engine.current.lfoGain = null;
+                engine.current.lfoFilter = null;
+                engine.current.droneOscillators = [];
+                engine.current.droneLfo = null;
+                engine.current.limitGain = null;
             }, 600);
         }
         setIsPlaying(false);
@@ -77,80 +126,175 @@ export const useNoise = () => {
 
         if (ctx.state === 'suspended') ctx.resume();
 
-        // Cleanup existing (re-play logic)
-        if (engine.current.source) {
-            engine.current.source.stop();
-            engine.current.source.disconnect();
-        }
+        // Cleanup existing (re-play logic with smooth fadeout)
+        const prevEngine = { ...engine.current };
+        if (prevEngine.limitGain && ctx) {
+            const stopTime = ctx.currentTime + 0.5;
+            prevEngine.limitGain.gain.cancelScheduledValues(ctx.currentTime);
+            prevEngine.limitGain.gain.setValueAtTime(prevEngine.limitGain.gain.value, ctx.currentTime);
+            prevEngine.limitGain.gain.exponentialRampToValueAtTime(0.001, stopTime);
 
-        // 1. Source: White Noise Loop
-        const buffer = createNoiseBuffer(ctx);
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.loop = true;
+            if (prevEngine.source) { try { prevEngine.source.stop(stopTime); } catch (e) {} }
+            if (prevEngine.lfoGain) { try { prevEngine.lfoGain.stop(stopTime); } catch (e) {} }
+            if (prevEngine.lfoFilter) { try { prevEngine.lfoFilter.stop(stopTime); } catch (e) {} }
+            prevEngine.droneOscillators.forEach(osc => { try { osc.stop(stopTime); } catch (e) {} });
+            if (prevEngine.droneLfo) { try { prevEngine.droneLfo.stop(stopTime); } catch (e) {} }
 
-        // 2. Filter Setup
-        const filter = ctx.createBiquadFilter();
-        // Default based on type - will be refined
-        if (type === 'brown') {
-            filter.type = 'lowpass';
-            filter.frequency.value = 180;
-            filter.Q.value = 1;
-        } else if (type === 'pink') {
-            // "Pink-ish" approximation using Lowpass + specific gain or Highshelf cut
-            // True pink noise is -3dB/octave. Biquads are -12dB/oct.
-            // A common trick is multiple filters or just a gentle Lowpass for aesthetics.
-            // Let's use a broader Lowpass at higher freq + Lowshelf boost
-            filter.type = 'lowpass';
-            filter.frequency.value = 800;
-            filter.Q.value = 0.5;
+            setTimeout(() => {
+                if (prevEngine.source) { try { prevEngine.source.disconnect(); } catch (e) {} }
+                if (prevEngine.lfoGain) { try { prevEngine.lfoGain.disconnect(); } catch (e) {} }
+                if (prevEngine.lfoFilter) { try { prevEngine.lfoFilter.disconnect(); } catch (e) {} }
+                prevEngine.droneOscillators.forEach(osc => { try { osc.disconnect(); } catch (e) {} });
+                if (prevEngine.droneLfo) { try { prevEngine.droneLfo.disconnect(); } catch (e) {} }
+                if (prevEngine.limitGain) { try { prevEngine.limitGain.disconnect(); } catch (e) {} }
+            }, 600);
         } else {
-             // White - almost no filtering, maybe slight rolloff
-             filter.type = 'lowpass';
-             filter.frequency.value = 18000;
+             // Immediate cleanup if no limitGain found
+             if (prevEngine.source) { try { prevEngine.source.stop(); prevEngine.source.disconnect(); } catch (e) {} }
+             if (prevEngine.lfoGain) { try { prevEngine.lfoGain.stop(); prevEngine.lfoGain.disconnect(); } catch (e) {} }
+             if (prevEngine.lfoFilter) { try { prevEngine.lfoFilter.stop(); prevEngine.lfoFilter.disconnect(); } catch (e) {} }
+             prevEngine.droneOscillators.forEach(osc => { try { osc.stop(); osc.disconnect(); } catch (e) {} });
+             if (prevEngine.droneLfo) { try { prevEngine.droneLfo.stop(); prevEngine.droneLfo.disconnect(); } catch (e) {} }
         }
 
-        // 3. Gain Nodes for Volume Control & Modulation
-        const variableGain = ctx.createGain(); // modulated by LFO
-        variableGain.gain.value = 0.8;
-
-        const limitGain = ctx.createGain(); // Master volume for this track
+        // Master volume for this track
+        const limitGain = ctx.createGain(); 
         limitGain.gain.setValueAtTime(0, ctx.currentTime);
-        limitGain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 1);
+        limitGain.gain.linearRampToValueAtTime(Math.max(volumeRef.current, 0.001), ctx.currentTime + 1);
 
-        // 4. LFO 1: "breath" (Volume Modulation)
-        // Very slow sine wave (0.1Hz ~ 10s cycle) to create ocean-like swell
-        const lfoGain = ctx.createOscillator();
-        lfoGain.type = 'sine';
-        lfoGain.frequency.value = 0.1;
-        const lfoGainDepth = ctx.createGain();
-        lfoGainDepth.gain.value = 0.15; // Modulate volume by +/- 0.15
+        let source: AudioBufferSourceNode | null = null;
+        let lfoGain: OscillatorNode | null = null;
+        let lfoFilter: OscillatorNode | null = null;
+        let filter: BiquadFilterNode | null = null;
+        let variableGain: GainNode | null = null;
+        let droneOscillators: OscillatorNode[] = [];
+        let droneLfo: OscillatorNode | null = null;
 
-        lfoGain.connect(lfoGainDepth);
-        lfoGainDepth.connect(variableGain.gain);
+        if (type === 'drone') {
+            // -- Cinematic Drone Engine --
+            
+            // 1. Setup the Procedural Reverb
+            const convolver = ctx.createConvolver();
+            convolver.buffer = createSyntheticReverb(ctx);
 
-        // 5. LFO 2: "spectral movement" (Filter Frequency Modulation)
-        // Slower 0.05Hz
-        const lfoFilter = ctx.createOscillator();
-        lfoFilter.type = 'triangle';
-        lfoFilter.frequency.value = 0.05;
-        const lfoFilterDepth = ctx.createGain();
-        lfoFilterDepth.gain.value = type === 'white' ? 500 : 100; // Modulate Freq by +/- Hz
+            // Create a dry/wet mix for the reverb
+            const dryGain = ctx.createGain();
+            const wetGain = ctx.createGain();
+            dryGain.gain.value = 0.4;
+            wetGain.gain.value = 0.8;
 
-        lfoFilter.connect(lfoFilterDepth);
-        lfoFilterDepth.connect(filter.frequency);
+            // 2. Setup the "Dark" Lowpass Filter
+            const lowpassFilter = ctx.createBiquadFilter();
+            lowpassFilter.type = "lowpass";
+            lowpassFilter.frequency.value = 250; // Keep it dark and brooding
+            lowpassFilter.Q.value = 2; // Slight resonance for character
+            filter = lowpassFilter;
 
-        // Graph Connection
-        // Source -> Filter -> VariableGain (LFO'd) -> LimitGain (User Vol) -> Destination
-        source.connect(filter);
-        filter.connect(variableGain);
-        variableGain.connect(limitGain);
-        limitGain.connect(ctx.destination);
+            // 3. Setup the LFO (The "Breath")
+            droneLfo = ctx.createOscillator();
+            droneLfo.type = "sine";
+            droneLfo.frequency.value = 0.05; // One full cycle every 20 seconds
+            const droneLfoGain = ctx.createGain();
+            droneLfoGain.gain.value = 150; // How wide the filter opens (250Hz + 150Hz)
 
-        // Start Oscillators
-        source.start();
-        lfoGain.start();
-        lfoFilter.start();
+            droneLfo.connect(droneLfoGain);
+            droneLfoGain.connect(lowpassFilter.frequency);
+
+            // 4. Create the Chord Oscillators (Root, Fifth, Octave)
+            const baseFreq = 65.41; // C2 (Deep Bass)
+            const frequencies = [
+                { freq: baseFreq, detune: -4 }, // Root (detuned flat)
+                { freq: baseFreq * 1.5, detune: 5 }, // Perfect Fifth (detuned sharp)
+                { freq: baseFreq * 2, detune: -2 }, // Octave
+            ];
+
+            droneOscillators = frequencies.map(({ freq, detune }) => {
+                const osc = ctx.createOscillator();
+                osc.type = "sawtooth"; // Sawtooth provides the rich harmonics needed for pads
+                osc.frequency.value = freq;
+                osc.detune.value = detune;
+
+                // Lower the volume of individual oscillators to prevent clipping
+                const oscGain = ctx.createGain();
+                oscGain.gain.value = 0.2;
+
+                osc.connect(oscGain);
+                oscGain.connect(lowpassFilter);
+                return osc;
+            });
+
+            // 5. Route Everything
+            lowpassFilter.connect(dryGain);
+            lowpassFilter.connect(convolver);
+            convolver.connect(wetGain);
+
+            dryGain.connect(limitGain);
+            wetGain.connect(limitGain);
+            limitGain.connect(ctx.destination);
+
+            // 6. Start the Engine
+            droneLfo.start();
+            droneOscillators.forEach((osc) => osc.start());
+
+        } else {
+            // -- Noise Engine (Pink/Brown/White) --
+
+            const buffer = createNoiseBuffer(ctx);
+            source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true;
+
+            filter = ctx.createBiquadFilter();
+            if (type === 'brown') {
+                filter.type = 'lowpass';
+                filter.frequency.value = 180;
+                filter.Q.value = 1;
+            } else if (type === 'pink') {
+                filter.type = 'lowpass';
+                filter.frequency.value = 800;
+                filter.Q.value = 0.5;
+            } else {
+                filter.type = 'lowpass';
+                filter.frequency.value = 18000;
+            }
+
+            variableGain = ctx.createGain(); 
+            // Makeup gain because severe lowpass filtering drops volume substantially
+            if (type === 'brown') {
+                variableGain.gain.value = 12.0; 
+            } else if (type === 'pink') {
+                variableGain.gain.value = 5.0;
+            } else {
+                variableGain.gain.value = 1.0;
+            }
+
+            lfoGain = ctx.createOscillator();
+            lfoGain.type = 'sine';
+            lfoGain.frequency.value = 0.1;
+            const lfoGainDepth = ctx.createGain();
+            lfoGainDepth.gain.value = variableGain.gain.value * 0.2; // Modulate by 20% of base gain
+
+            lfoGain.connect(lfoGainDepth);
+            lfoGainDepth.connect(variableGain.gain);
+
+            lfoFilter = ctx.createOscillator();
+            lfoFilter.type = 'triangle';
+            lfoFilter.frequency.value = 0.05;
+            const lfoFilterDepth = ctx.createGain();
+            lfoFilterDepth.gain.value = type === 'white' ? 500 : 100; 
+
+            lfoFilter.connect(lfoFilterDepth);
+            lfoFilterDepth.connect(filter.frequency);
+
+            source.connect(filter);
+            filter.connect(variableGain);
+            variableGain.connect(limitGain);
+            limitGain.connect(ctx.destination);
+
+            source.start();
+            lfoGain.start();
+            lfoFilter.start();
+        }
 
         // Store Refs
         engine.current = {
@@ -161,18 +305,19 @@ export const useNoise = () => {
             limitGain,
             lfoGain,
             lfoFilter,
-            lfoFilterDepth: lfoFilterDepth
+            droneOscillators,
+            droneLfo
         };
 
         setIsPlaying(true);
-    }, [initAudio, type, volume]);
+    }, [initAudio, type]); // removed `volume` to prevent infinite restart loops when slider moves
 
     // Handle Volume Change
     const setVolume = useCallback((val: number) => {
         setVolumeState(val);
         const { context, limitGain } = engine.current;
         if (context && limitGain) {
-             limitGain.gain.setTargetAtTime(val, context.currentTime, 0.1);
+             limitGain.gain.setTargetAtTime(Math.max(val, 0.001), context.currentTime, 0.1);
         }
     }, []);
 
@@ -194,12 +339,12 @@ export const useNoise = () => {
     // Cleanup
     useEffect(() => {
         return () => {
-            // shared context, don't close. Just stop.
-             if (engine.current.source) {
-                 try {
-                     engine.current.source.stop();
-                 } catch {}
-             }
+             const prevEngine = engine.current;
+             if (prevEngine.source) { try { prevEngine.source.stop(); prevEngine.source.disconnect(); } catch (e) {} }
+             if (prevEngine.lfoGain) { try { prevEngine.lfoGain.stop(); prevEngine.lfoGain.disconnect(); } catch (e) {} }
+             if (prevEngine.lfoFilter) { try { prevEngine.lfoFilter.stop(); prevEngine.lfoFilter.disconnect(); } catch (e) {} }
+             prevEngine.droneOscillators.forEach(osc => { try { osc.stop(); osc.disconnect(); } catch (e) {} });
+             if (prevEngine.droneLfo) { try { prevEngine.droneLfo.stop(); prevEngine.droneLfo.disconnect(); } catch (e) {} }
              engine.current.context = null;
         };
     }, []);
