@@ -12,6 +12,7 @@ interface NoiseEngineRef {
     lfoGain: OscillatorNode | null; // LFO for gain modulation
     lfoFilter: OscillatorNode | null; // LFO for filter modulation
     lfoFilterGain: GainNode | null; // Depth of filter modulation
+    lfoFilterDepth?: GainNode | null;
 }
 
 export const useNoise = () => {
@@ -160,8 +161,8 @@ export const useNoise = () => {
             limitGain,
             lfoGain,
             lfoFilter,
-            lfoFilterDepth: lfoFilterDepth // Need to store if we want to tweak later, but ref implies direct node
-        } as any; // Cast for custom props not in initial interface if needed, or update interface
+            lfoFilterDepth: lfoFilterDepth
+        };
 
         setIsPlaying(true);
     }, [initAudio, type, volume]);
@@ -183,9 +184,12 @@ export const useNoise = () => {
     // Effect to handle type switching while playing
     useEffect(() => {
         if (isPlaying) {
-            play(); // Re-trigger play to rebuild graph with new filter settings
+             const timer = setTimeout(() => {
+                 play();
+             }, 0);
+             return () => clearTimeout(timer);
         }
-    }, [type]);
+    }, [type, isPlaying, play]);
 
     // Cleanup
     useEffect(() => {
@@ -194,7 +198,7 @@ export const useNoise = () => {
              if (engine.current.source) {
                  try {
                      engine.current.source.stop();
-                 } catch (e) {}
+                 } catch {}
              }
              engine.current.context = null;
         };

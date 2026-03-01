@@ -7,7 +7,6 @@ import { Wind, CloudRain, Zap } from 'lucide-react';
 type NoiseType = 'pink' | 'white' | 'brown';
 
 interface AmbientControlProps {
-    isPlaying: boolean;
     volume: number;
     type: NoiseType;
     onVolumeChange: (val: number) => void;
@@ -23,7 +22,6 @@ export const AmbientControl: React.FC<AmbientControlProps> = ({
     onTypeChange,
     onToggle,
     isNoisePlaying,
-    isPlaying
 }) => {
     return (
         <Card>

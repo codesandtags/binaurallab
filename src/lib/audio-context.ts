@@ -14,7 +14,7 @@ class AudioContextManager {
         }
 
         if (!AudioContextManager.instance) {
-            const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+            const AudioContextClass = (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
             AudioContextManager.instance = new AudioContextClass();
         }
 

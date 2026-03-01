@@ -27,7 +27,7 @@ export const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose }) => {
                     <section className="space-y-2">
                         <h3 className="font-bold text-lg">How it Works</h3>
                         <p className="text-sm text-muted-foreground">
-                            Binaural beats play two slightly different frequencies in each ear. Your brain processes the difference (the "beat") and entrains to that frequency.
+                            Binaural beats play two slightly different frequencies in each ear. Your brain processes the difference (the &quot;beat&quot;) and entrains to that frequency.
                         </p>
                     </section>
 

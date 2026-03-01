@@ -34,11 +34,16 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-export default function RootLayout({
+import { createClient } from '@/lib/supabase-server'
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabase = await createClient()
+  await supabase.auth.getUser()
+
   return (
     <html lang="en">
       <body

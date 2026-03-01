@@ -12,6 +12,12 @@ export const SleepTimer: React.FC<SleepTimerProps> = ({ onTimerComplete, isPlayi
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [isActive, setIsActive] = useState(false);
 
+    // If audio stops manually, cancel timer during render
+    if (!isPlaying && isActive) {
+        setIsActive(false);
+        setTimeLeft(null);
+    }
+
     useEffect(() => {
         let interval: NodeJS.Timeout;
 
@@ -29,20 +35,14 @@ export const SleepTimer: React.FC<SleepTimerProps> = ({ onTimerComplete, isPlayi
         } else if (timeLeft === 0 && isActive) {
             // Trigger completion
             onTimerComplete();
-            setIsActive(false);
-            setTimeLeft(null);
+            setTimeout(() => {
+                setIsActive(false);
+                setTimeLeft(null);
+            }, 0);
         }
 
         return () => clearInterval(interval);
     }, [isActive, timeLeft, onTimerComplete]);
-
-    // If audio stops manually, cancel timer?
-    useEffect(() => {
-        if (!isPlaying) {
-            setIsActive(false);
-            setTimeLeft(null);
-        }
-    }, [isPlaying]);
 
     const startTimer = (minutes: number) => {
         setTimeLeft(minutes * 60);

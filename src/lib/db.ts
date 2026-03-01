@@ -10,14 +10,22 @@ interface Session {
   presetName?: string; // Optional if matched against preset
 }
 
-const db = new Dexie('BinauralStartDB') as Dexie & {
+interface BinauralDatabase extends Dexie {
   sessions: EntityTable<Session, 'id'>;
-};
+}
 
-// Schema
-db.version(1).stores({
-  sessions: '++id, startTime, duration, baseFreq, binauralBeat'
-});
+const isBrowser = typeof window !== 'undefined';
+
+const db = isBrowser 
+  ? new Dexie('BinauralStartDB') as BinauralDatabase
+  : {} as BinauralDatabase;
+
+// Schema - only on browser
+if (isBrowser) {
+  db.version(1).stores({
+    sessions: '++id, startTime, duration, baseFreq, binauralBeat'
+  });
+}
 
 export { db };
 export type { Session };
